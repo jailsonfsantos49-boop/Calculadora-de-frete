@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="pt-BR"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Simulador de Frete</title>
+<style>
+:root{box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px);
+--bg:#f5f6f8;--card:#fff;--tx:#1b2430;--mut:#667085;--bd:#dfe3ea;--ac:#0b5fd6;--acb:#e8f0fd}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){color-scheme:dark;--bg:#12161c;--card:#1b2129;--tx:#e8ecf2;--mut:#98a2b3;--bd:#2c3440;--ac:#5b9cff;--acb:#1d2a40}}
+:root[data-theme="dark"]{color-scheme:dark;--bg:#12161c;--card:#1b2129;--tx:#e8ecf2;--mut:#98a2b3;--bd:#2c3440;--ac:#5b9cff;--acb:#1d2a40}
+*,*::before,*::after{box-sizing:inherit}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+body{margin:0;background:var(--bg);color:var(--tx);font:15px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+main{max-width:920px;margin:0 auto;padding:20px 16px 40px}
+h1{font-size:22px;margin:0 0 4px}p.sub{color:var(--mut);margin:0 0 18px}
+.grid{display:grid;gap:16px;grid-template-columns:1fr 1fr}
+@media (max-width:760px){.grid{grid-template-columns:1fr}}
+.card{background:var(--card);border:1px solid var(--bd);border-radius:12px;padding:16px}
+.card h2{font-size:15px;margin:0 0 12px}
+label{display:block;font-size:13px;color:var(--mut);margin:10px 0 4px}
+input,select{width:100%;padding:10px;border:1px solid var(--bd);border-radius:8px;background:var(--bg);color:var(--tx);font:inherit}
+.row{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.big{font-size:30px;font-weight:700;color:var(--ac)}
+.kv{display:flex;justify-content:space-between;gap:8px;padding:6px 0;border-bottom:1px solid var(--bd)}
+.kv:last-child{border:0}.kv span:first-child{color:var(--mut)}
+.tot{background:var(--acb);border-radius:10px;padding:12px;margin:12px 0}
+.small{font-size:12px;color:var(--mut)}
+.scroll{overflow-x:auto}table{width:100%;border-collapse:collapse;font-size:13px}
+th,td{text-align:right;padding:6px 8px;border-bottom:1px solid var(--bd);white-space:nowrap}th:first-child,td:first-child{text-align:left}
+button{margin-top:14px;width:100%;padding:11px;border:0;border-radius:8px;background:var(--ac);color:#fff;font:inherit;font-weight:600;cursor:pointer}button[hidden]{display:none}
+</style></head><body><main>
+<h1>Simulador de Frete</h1>
+<p class="sub">Estimativa baseada no histórico de fretes contratados (fatores de peso, distância e segmento).</p>
+<div class="grid">
+<section class="card"><h2>Dados da carga</h2>
+<label for="o">Local de coleta</label><input id="o" placeholder="Ex.: Nova Lima - MG">
+<label for="d">Local de destino</label><input id="d" placeholder="Ex.: Jacobina - BA">
+<div class="row"><div><label for="km">Distância (km)</label><input id="km" type="number" min="1" inputmode="decimal" value="380"></div>
+<div><label for="kg">Peso (kg)</label><input id="kg" type="number" min="1" inputmode="decimal" value="1200"></div></div>
+<label for="t">Tipo de carga</label>
+<select id="t"><option>CARGA FRAC</option><option>CARGA DED</option><option>EQUIP PESADO</option><option>VEICULO</option></select>
+<label for="m">Descrição do material</label><input id="m" placeholder="Ex.: 100 hastes BQ + eliminador de poeira">
+<div class="row"><div><label for="v">Valor da carga (R$)</label><input id="v" type="number" min="0" inputmode="decimal" value="50000"></div>
+<div><label for="tx">Taxa do seguro (%)</label><input id="tx" type="number" min="0" step="0.01" value="0.30"></div></div>
+<p class="small">CARGA FRAC = fracionada · CARGA DED = dedicada · EQUIP PESADO = sondas, retroescavadeiras etc. O seguro usa taxa editável (padrão de mercado, aproximada).</p>
+</section>
+<section class="card"><h2>Estimativa</h2>
+<div class="small" id="rota"></div><div class="big" id="frete">–</div><div class="small" id="faixa"></div>
+<div class="tot"><div class="kv" style="border:0"><span>Seguro de carga (aprox.)</span><b id="seg">–</b></div>
+<div class="kv" style="border:0"><span>Total estimado</span><b id="tot">–</b></div></div>
+<div class="kv"><span>Fator de peso</span><b id="fp"></b></div>
+<div class="kv"><span>Fator de distância</span><b id="fk"></b></div>
+<div class="kv"><span>Fator de segmento</span><b id="fs"></b></div>
+<div class="kv"><span>Custo/km de referência (mediana)</span><b id="ck"></b></div>
+<div class="kv"><span>Frete efetivo por km</span><b id="rk"></b></div>
+<button id="pdf" hidden>Gerar relatório em PDF</button><div class="small" id="pdfmsg"></div>
+</section></div>
+<section class="card" style="margin-top:16px"><h2>Fretes históricos mais parecidos (mesmo tipo)</h2>
+<div class="scroll"><table><thead><tr><th>Tipo</th><th>Km</th><th>Peso (kg)</th><th>Valor pago</th></tr></thead><tbody id="cmp"></tbody></table></div>
+<p class="small" id="n"></p></section>
+<p class="small">Fórmula da planilha: custo/km = valor ÷ km × F.peso × F.km × F.segmento. O simulador inverte a fórmula: frete = custo/km de referência × km ÷ (F.peso × F.km × F.segmento). Valores indicativos, sem substituir cotação.</p>
+</main>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script>
+const DATA=[["CARGA DED",958,6000,11240],["CARGA DED",1440,10000,9500],["CARGA FRAC",2130,550,2490],["EQUIP PESADO",1439,1400,17500],["CARGA FRAC",1441,1440,5600],["CARGA DED",820,3500,11400],["CARGA FRAC",230,500,2900],["CARGA DED",2847,3700,17800],["CARGA FRAC",1235,2100,3900],["CARGA DED",2357,38700,32900],["CARGA DED",1450,4700,21240],["CARGA DED",1234,17000,28000],["CARGA DED",2074,4000,16800],["EQUIP PESADO",408,9000,11000],["CARGA FRAC",1447,600,2800],["CARGA DED",1956,3200,13200],["EQUIP PESADO",2241,7800,13000],["CARGA DED",2135,14000,12600],["CARGA FRAC",147,3000,1800],["EQUIP PESADO",131,9000,3900],["EQUIP PESADO",2248,16000,40000],["CARGA FRAC",1442,1600,2600],["EQUIP PESADO",772,10000,20000],["CARGA FRAC",1996,493,5900],["EQUIP PESADO",857,25000,41800],["EQUIP PESADO",2125,10000,27900],["CARGA DED",2280,3000,13900],["CARGA FRAC",152,600,1397],["CARGA FRAC",654,1115,2900],["CARGA FRAC",382,1250,4200],["EQUIP PESADO",1445,16000,13174],["CARGA DED",1530,2000,9500],["CARGA FRAC",604,5610,5900],["CARGA FRAC",382,1150,2900],["CARGA FRAC",381,1200,2900],["CARGA FRAC",384,1300,2900],["EQUIP PESADO",2200,24000,42800],["CARGA DED",2150,14000,12600],["CARGA DED",2100,14000,12600],["CARGA DED",1527,8000,9500],["EQUIP PESADO",540,10000,4980],["CARGA DED",2384,10400,15900],["CARGA DED",1236,3500,6400],["CARGA DED",1900,5000,9500],["CARGA DED",2100,14000,12600],["EQUIP PESADO",2232,36650,55000],["CARGA FRAC",450,1000,2500],["CARGA FRAC",335,2100,3900],["EQUIP PESADO",2232,10000,29950],["CARGA DED",2348,8700,13400],["EQUIP PESADO",2158,16000,37500],["CARGA DED",1527,13200,17500],["CARGA DED",3000,4770,22900],["CARGA FRAC",380,3200,3900],["EQUIP PESADO",2031,21000,37500],["EQUIP PESADO",2158,18000,36800],["EQUIP PESADO",1986,10000,13000],["EQUIP PESADO",1440,8000,14900],["CARGA FRAC",380,1200,2800],["CARGA FRAC",1832,1833,3100],["EQUIP PESADO",200,9000,4500],["CARGA FRAC",2268,4415,6000],["CARGA DED",2000,4000,13000],["CARGA FRAC",1438,4200,5500],["EQUIP PESADO",421,14000,17000],["CARGA FRAC",1988,740,2800],["EQUIP PESADO",1540,10091,21000],["EQUIP PESADO",381,3000,4900],["CARGA FRAC",385,980,3000],["CARGA DED",1400,13300,11900],["CARGA DED",3000,982,15900],["EQUIP PESADO",228,9000,9200],["CARGA DED",1292,3720,15900],["CARGA DED",1236,4640,6000],["CARGA FRAC",2432,1290,6500],["EQUIP PESADO",192,190,999.83],["EQUIP PESADO",1500,9800,8500],["CARGA FRAC",385,8000,5200],["CARGA DED",164,600,4000],["EQUIP PESADO",2157,8000,8200],["EQUIP PESADO",1620,11325,34400],["CARGA DED",408,8097,7000],["CARGA FRAC",2232,19000,7000],["EQUIP PESADO",4460,36650,36000],["EQUIP PESADO",1840,10000,37000],["CARGA FRAC",2090,1020,2900],["EQUIP PESADO",160,22000,13000],["CARGA FRAC",2312,2179,7300],["EQUIP PESADO",2383,9700,6198],["CARGA FRAC",770,41,4200],["EQUIP PESADO",220,9000,7800],["CARGA DED",2764,9702,18500],["CARGA DED",2450,3755,21500],["CARGA DED",2270,1130,8300],["CARGA FRAC",1980,87,2500],["VEICULO",1550,9000,11000],["CARGA FRAC",1448,800,1900],["CARGA FRAC",4400,29496,38800],["EQUIP PESADO",2550,5200,14450],["EQUIP PESADO",820,10000,10500],["EQUIP PESADO",1431,40,3900],["CARGA FRAC",600,40,1500],["CARGA FRAC",660,190,3900],["CARGA DED",1850,14000,12258.97],["CARGA FRAC",2200,6389,13900],["EQUIP PESADO",2000,14300,42000],["CARGA FRAC",700,2000,5798],["VEICULO",1550,3000,2800],["EQUIP PESADO",262,8070,3700],["EQUIP PESADO",300,8000,5400],["CARGA FRAC",2100,20,1980],["EQUIP PESADO",70,10000,5498],["EQUIP PESADO",2200,14200,42000],["CARGA DED",1149,2980,10008.16],["CARGA FRAC",1450,4375,12300],["EQUIP PESADO",528,19000,8000],["EQUIP PESADO",1620,9000,49996],["CARGA FRAC",1440,150,5375],["CARGA FRAC",2300,379,3500],["CARGA DED",2020,1850,12550],["VEICULO",385,600,4500],["CARGA DED",2830,3720,17900],["EQUIP PESADO",2300,11500,14500],["CARGA FRAC",2130,290,6000],["EQUIP PESADO",360,10091,13798.16],["EQUIP PESADO",135,8070,4500],["VEICULO",670,21000,8910],["EQUIP PESADO",900,10000,30000],["EQUIP PESADO",800,9000,15400],["EQUIP PESADO",455,9000,14900],["EQUIP PESADO",110,8070,2500],["CARGA FRAC",1440,270,5367.18],["VEICULO",1500,18000,10750],["CARGA FRAC",2600,270,4980],["EQUIP PESADO",1560,10000,25900],["EQUIP PESADO",1000,8070,11000],["CARGA DED",780,5000,16900],["EQUIP PESADO",105,8070,2300],["EQUIP PESADO",460,19000,11500],["EQUIP PESADO",1992,6000,7900],["EQUIP PESADO",408,412,11480],["EQUIP PESADO",346,10000,9960],["EQUIP PESADO",2300,6000,15000],["VEICULO",388,600,4000],["CARGA DED",1500,11730,7600],["EQUIP PESADO",365,24000,15000],["CARGA FRAC",1440,3605,5900],["EQUIP PESADO",412,24000,18500],["EQUIP PESADO",135,8070,3000],["EQUIP PESADO",244,23000,6900],["VEICULO",1500,3000,2150],["CARGA FRAC",2256,215,3500],["CARGA DED",2960,3720,17550],["CARGA DED",244,5000,3900],["EQUIP PESADO",504,10000,7500],["EQUIP PESADO",80,14000,1800],["CARGA FRAC",2149,250,3000],["CARGA FRAC",2055,200,2850],["CARGA DED",2208,140,3662.8],["CARGA DED",1151,5417,7000],["CARGA FRAC",2040,156,3000],["EQUIP PESADO",1918,9800,25000],["VEICULO",2200,9000,6900],["CARGA DED",600,5500,4900],["VEICULO",2055,3000,5250],["EQUIP PESADO",2129,2129,32000],["CARGA DED",1900,14000,9000],["CARGA FRAC",1501,1500,2800],["CARGA FRAC",1481,715,2900],["CARGA DED",343,5000,3620],["CARGA DED",343,5000,3620],["CARGA FRAC",1977,91,1640],["EQUIP PESADO",60,10000,3900],["CARGA FRAC",2262,600,3300],["CARGA FRAC",1810,150,2000],["CARGA FRAC",1417,1300,2900],["EQUIP PESADO",45,10000,3585],["CARGA FRAC",1412,1700,4050],["CARGA DED",2324,38677,28500],["CARGA DED",1794,8860,13700],["CARGA DED",527,10000,6398],["CARGA FRAC",1986,240,2450],["EQUIP PESADO",70,10700,1300],["EQUIP PESADO",70,14000,1500],["EQUIP PESADO",70,8000,4600],["CARGA FRAC",336,1500,4300],["EQUIP PESADO",2113,19000,37000],["CARGA FRAC",770,73,1080],["CARGA FRAC",1807,150,2200],["EQUIP PESADO",513,11325,10900],["CARGA DED",514,7350,5900],["CARGA FRAC",1976,385,1900],["EQUIP PESADO",1533,19000,37178],["CARGA DED",2400,15048,20500],["CARGA DED",810,14220,14700],["CARGA DED",1533,5000,12200],["CARGA FRAC",2333,500,3300],["CARGA DED",2890,5200,23900],["EQUIP PESADO",220,9000,4800],["CARGA DED",775,600,6000],["CARGA DED",1533,600,6000],["EQUIP PESADO",2626,14000,66446],["CARGA DED",600,385,4000],["EQUIP PESADO",286,22300,7500],["CARGA DED",2382,6562,18480],["EQUIP PESADO",41,19000,1800],["EQUIP PESADO",1512,15000,37026],["CARGA DED",2115,5000,14850],["CARGA FRAC",2427,600,3900],["CARGA DED",1139,3235,7900],["CARGA FRAC",1995,120,1414.33],["CARGA DED",2626,500,10850],["CARGA DED",2005,600,15200],["CARGA DED",515,4140,5000],["CARGA DED",2054,2250,14000],["CARGA DED",1333,4622,19500],["CARGA DED",2278,1245,12900],["CARGA DED",1584,560,9660],["CARGA FRAC",1398,700,3000],["CARGA FRAC",602,9,750],["CARGA FRAC",1981,173,1226.76],["CARGA DED",2871,16181,26400],["CARGA DED",206,18000,12400],["EQUIP PESADO",200,17000,9500],["CARGA DED",1525,7122,12900],["CARGA DED",1909,680,9400],["EQUIP PESADO",338,14592,10000],["CARGA DED",2476,2653,17900],["CARGA FRAC",560,8350,6000],["CARGA FRAC",783,121,1590],["EQUIP PESADO",178,29000,6500],["CARGA FRAC",1979,1242,3500],["CARGA DED",2953,3604,20000],["CARGA FRAC",2303,3120,5800],["CARGA FRAC",1985,615,3900],["CARGA FRAC",1902,1320,3900],["CARGA FRAC",524,1665,3000],["VEICULO",2223,3000,2400],["EQUIP PESADO",343,14090,12000],["CARGA DED",460,2000,4900],["EQUIP PESADO",2270,5200,15900],["CARGA DED",1507,5000,10000],["EQUIP PESADO",920,9800,19000],["CARGA FRAC",490,207,1798],["CARGA DED",391,600,3000],["CARGA DED",1307,2040,10350],["CARGA DED",460,1220,2700],["CARGA FRAC",2304,305,3200],["CARGA DED",3333,4611,29950],["EQUIP PESADO",1694,6000,13500],["CARGA FRAC",1975,340,1922.22],["CARGA DED",1422,39387,22000],["CARGA FRAC",1815,365,2500],["CARGA DED",460,1220,2700],["CARGA FRAC",1077,3700,2500],["CARGA FRAC",2340,1102,4500],["CARGA FRAC",2294,432,2000],["EQUIP PESADO",1773,13800,17000],["CARGA DED",460,1220,2500],["CARGA DED",391,600,4400],["EQUIP PESADO",1896,10000,30000],["CARGA DED",833,5000,4900],["EQUIP PESADO",2217,10000,44000],["CARGA FRAC",1402,800,2100],["CARGA DED",1984,750,9500],["VEICULO",2010,24000,33600],["VEICULO",1440,6000,3900],["CARGA DED",2217,3000,15400],["EQUIP PESADO",24,9000,3200],["CARGA FRAC",2306,2230,5500],["CARGA DED",460,960,2800],["CARGA DED",525,1675,5200],["CARGA DED",2361,12247,18500],["CARGA FRAC",1488,1740,11500],["VEICULO",424,600,3000],["CARGA FRAC",427,800,2050],["EQUIP PESADO",2656,11800,32700],["CARGA DED",460,1500,2800],["CARGA FRAC",1328,675,4900],["CARGA FRAC",2441,800,4650],["CARGA DED",2012,5000,14300],["VEICULO",1421,6000,5850],["CARGA DED",2077,3000,12769],["CARGA FRAC",2133,210,1988],["CARGA DED",360,1460,2800],["CARGA FRAC",515,3630,4058],["CARGA DED",1410,9000,9900],["CARGA FRAC",1437,80,3350],["EQUIP PESADO",55,9000,7500],["CARGA DED",1564,3000,11700],["EQUIP PESADO",400,7000,8500],["EQUIP PESADO",20,9000,3200],["CARGA DED",1139,2649,8300],["CARGA FRAC",2947,585,3400],["CARGA DED",360,1530,2800],["CARGA DED",2072,5000,15500],["EQUIP PESADO",410,22000,12000],["EQUIP PESADO",396,14302,5250],["CARGA DED",360,900,2800],["CARGA DED",1411,9000,11000],["EQUIP PESADO",38,9000,4000],["EQUIP PESADO",2000,10000,54000],["EQUIP PESADO",400,10000,8500],["CARGA DED",424,600,3000],["CARGA FRAC",2224,10,800],["EQUIP PESADO",276,10000,12350],["CARGA DED",2307,10560,17900],["CARGA DED",360,1560,2800],["CARGA DED",4753,160,7900],["EQUIP PESADO",395,22000,5000],["EQUIP PESADO",334,14090,11800],["EQUIP PESADO",1521,13800,25500],["CARGA DED",334,5000,3898],["CARGA DED",360,1278,2800],["EQUIP PESADO",1764,19300,47500],["CARGA DED",424,600,3000],["CARGA DED",1994,862,24900],["CARGA FRAC",1414,200,1885],["CARGA DED",3335,600,24200],["CARGA DED",459,12000,7550],["CARGA DED",223,2300,4900],["CARGA FRAC",1975,346,1661.72],["CARGA DED",4376,23315,58900],["VEICULO",2084,9000,15000],["CARGA DED",203,690,1300],["EQUIP PESADO",2079,14300,45000],["EQUIP PESADO",2437,9000,45000],["CARGA FRAC",596,51,1000],["CARGA FRAC",1718,110,3900],["CARGA DED",2535,530,4300],["EQUIP PESADO",935,9800,15500],["CARGA DED",2064,1000,10900],["CARGA DED",2437,4000,18885],["CARGA DED",360,2346,3800],["CARGA DED",2371,810,11500],["CARGA DED",360,600,1400],["CARGA FRAC",582,460,2500],["CARGA FRAC",618,45,850],["EQUIP PESADO",19,9000,4000],["CARGA DED",206,5000,2600],["EQUIP PESADO",3035,9800,44500],["CARGA DED",522,11336,6000],["CARGA DED",360,240,1400],["CARGA DED",360,1190,2800],["EQUIP PESADO",30,14300,2500],["CARGA DED",30,5000,3200],["CARGA FRAC",1467,4360,5500],["EQUIP PESADO",30,20000,3000],["CARGA DED",2436,2403,17500],["CARGA DED",205,1500,1500],["CARGA DED",3492,5000,24300],["CARGA DED",380,10000,5700],["CARGA DED",333,2000,2000],["CARGA FRAC",1392,200,1500],["VEICULO",377,1632,2800],["CARGA DED",225,1200,3000],["CARGA FRAC",851,318,2400],["CARGA DED",4169,1400,10900],["CARGA FRAC",2177,1200,4500],["CARGA DED",5975,17450,34500],["EQUIP PESADO",33,9800,9435],["CARGA DED",240,405,3500],["CARGA FRAC",1351,830,2500],["CARGA DED",2156,8050,15900],["CARGA FRAC",219,405,3500],["CARGA DED",2847,3844,21900],["CARGA DED",370,1408,2800],["CARGA DED",360,2295,3800],["CARGA FRAC",2172,216,12400],["CARGA DED",380,3000,5700],["CARGA DED",360,1547,2800],["CARGA DED",1238,2360,8200],["CARGA DED",370,1190,2800],["CARGA FRAC",1807,1000,5450],["CARGA DED",201,1098,3200],["CARGA DED",370,2873,3800],["VEICULO",272,600,2000],["EQUIP PESADO",40,8070,1700],["CARGA DED",370,2040,3800],["EQUIP PESADO",40,17000,2700],["CARGA DED",2027,6880,15900],["EQUIP PESADO",8070,40,2700],["CARGA DED",1418,1168,3300],["CARGA DED",370,1734,3800],["CARGA FRAC",1975,344,1972.26],["EQUIP PESADO",205,8070,3500],["CARGA DED",1480,5000,3800],["CARGA DED",2887,3550,21600],["CARGA DED",2107,600,10900],["CARGA DED",40,47,790]]; // [tipo, km, kg, valor]
+const FS={"CARGA DED":1,"CARGA FRAC":1.2,"EQUIP PESADO":1.3,"VEICULO":1};
+const fp=k=>k<=1000?1:k<=10000?1.1:1.3;
+const fk=k=>k<=20?.15:k<=40?.3:k<=60?.45:k<=80?.6:k<=100?.75:1;
+const brl=n=>n.toLocaleString("pt-BR",{style:"currency",currency:"BRL"});
+const $=id=>document.getElementById(id);
+const pct=(a,p)=>{const i=(a.length-1)*p,l=Math.floor(i),h=Math.ceil(i);return a[l]+(a[h]-a[l])*(i-l)};
+const IDX={};
+for(const [t,km,kg,v] of DATA){(IDX[t]=IDX[t]||[]).push(v/km*fp(kg)*fk(km)*FS[t])}
+for(const t in IDX)IDX[t].sort((a,b)=>a-b);
+function calc(){
+ const km=+$("km").value,kg=+$("kg").value,t=$("t").value,v=+$("v").value||0,tx=+$("tx").value||0;
+ $("rota").textContent=($("o").value||"Origem")+" → "+($("d").value||"Destino")+($("m").value?" · "+$("m").value:"");
+ if(!(km>0&&kg>0)){$("frete").textContent="–";LAST=null;return}
+ const f=fp(kg)*fk(km)*FS[t],a=IDX[t],med=pct(a,.5),lo=pct(a,.25),hi=pct(a,.75);
+ const est=med*km/f,seg=v*tx/100;
+ $("frete").textContent=brl(est);
+ $("faixa").textContent="Faixa provável: "+brl(lo*km/f)+" a "+brl(hi*km/f);
+ $("seg").textContent=brl(seg);$("tot").textContent=brl(est+seg);
+ $("fp").textContent=fp(kg).toFixed(2);$("fk").textContent=fk(km).toFixed(2);$("fs").textContent=FS[t].toFixed(2);
+ $("ck").textContent=brl(med)+"/km";$("rk").textContent=brl(est/km)+"/km";
+ const c=DATA.filter(r=>r[0]===t).map(r=>({r,s:Math.abs(Math.log(r[1]/km))+.5*Math.abs(Math.log(r[2]/kg))})).sort((x,y)=>x.s-y.s).slice(0,6);
+ $("cmp").innerHTML=c.map(({r})=>`<tr><td>${r[0]}</td><td>${r[1]}</td><td>${r[2].toLocaleString("pt-BR")}</td><td>${brl(r[3])}</td></tr>`).join("");
+ $("n").textContent="Base: "+a.length+" fretes do tipo "+t+" ("+DATA.length+" no total).";
+ LAST={o:$("o").value,d:$("d").value,m:$("m").value,t,km,kg,v,tx,est,lo:lo*km/f,hi:hi*km/f,seg,fp:fp(kg),fk:fk(km),fs:FS[t],med,n:a.length,c:c.map(x=>x.r)};
+}
+document.querySelectorAll("input,select").forEach(e=>e.addEventListener("input",calc));
+var LAST=null;calc();
+$("pdf").hidden=false;
+$("pdf").addEventListener("click",async()=>{
+ if(!LAST)return;
+ const msg=$("pdfmsg");msg.textContent="";
+ try{
+  const dl=window.claude?await claude.use("downloads"):null;
+  const L=LAST,s=x=>String(x).replace(/[\u00a0\u202f]/g," "),n=x=>Number(x).toLocaleString("pt-BR");
+  const doc=new window.jspdf.jsPDF({unit:"mm",format:"a4"});let y=20;
+  doc.setFont("helvetica","bold");doc.setFontSize(18);doc.text("Relatório de Simulação de Frete",15,y);
+  doc.setFont("helvetica","normal");doc.setFontSize(10);y+=7;doc.text("Emitido em "+new Date().toLocaleString("pt-BR"),15,y);
+  const sec=t=>{y+=10;doc.setFont("helvetica","bold");doc.setFontSize(12);doc.text(t,15,y);doc.setDrawColor(180);doc.line(15,y+1.5,195,y+1.5);y+=2;doc.setFont("helvetica","normal");doc.setFontSize(10)};
+  const kv=(k,v,b)=>{y+=6;doc.text(k,15,y);doc.setFont("helvetica",b?"bold":"normal");doc.text(s(v),195,y,{align:"right"});doc.setFont("helvetica","normal")};
+  const para=(k,v)=>{y+=6;doc.text(k,15,y);const ls=doc.splitTextToSize(s(v||"-"),130);doc.text(ls,195,y,{align:"right"});y+=(ls.length-1)*5};
+  sec("Dados da carga");
+  para("Local de coleta",L.o);para("Local de destino",L.d);para("Descrição do material",L.m);
+  kv("Tipo de carga",L.t);kv("Distância",n(L.km)+" km");kv("Peso",n(L.kg)+" kg");kv("Valor da carga",brl(L.v));
+  sec("Estimativa");
+  kv("Frete estimado",brl(L.est),1);kv("Faixa provável",brl(L.lo)+" a "+brl(L.hi));
+  kv("Seguro de carga (aprox., "+L.tx.toLocaleString("pt-BR")+"%)",brl(L.seg));kv("Total estimado",brl(L.est+L.seg),1);
+  kv("Frete efetivo por km",brl(L.est/L.km)+"/km");
+  sec("Fatores aplicados");
+  kv("Fator de peso",L.fp.toFixed(2));kv("Fator de distância",L.fk.toFixed(2));kv("Fator de segmento",L.fs.toFixed(2));
+  kv("Custo/km de referência (mediana, "+L.n+" fretes)",brl(L.med)+"/km");
+  sec("Fretes históricos mais parecidos ("+L.t+")");
+  y+=6;doc.setFont("helvetica","bold");doc.text("Km",15,y);doc.text("Peso (kg)",105,y,{align:"right"});doc.text("Valor pago",195,y,{align:"right"});doc.setFont("helvetica","normal");
+  L.c.forEach(r=>{y+=6;doc.text(n(r[1]),15,y);doc.text(n(r[2]),105,y,{align:"right"});doc.text(s(brl(r[3])),195,y,{align:"right"})});
+  y+=12;doc.setFontSize(8);doc.setTextColor(100);
+  doc.text(doc.splitTextToSize("Fórmula: custo/km = valor ÷ km × F.peso × F.km × F.segmento. O simulador inverte a fórmula usando a mediana histórica do tipo de carga. Valores indicativos, sem substituir cotação.",180),15,y);
+  const fn="relatorio_frete_"+new Date().toISOString().slice(0,10)+".pdf";if(dl)await dl.save({filename:fn,data:doc.output("blob")});else doc.save(fn);
+ }catch(e){if(!e||e.code!=="declined")msg.textContent="Não foi possível gerar o PDF neste ambiente."}
+});
+</script></body></html>
